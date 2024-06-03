@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Chat with AI</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@10/dist/sweetalert2.min.css">
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #chat-container {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            max-width: 500px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            height: 80vh;
+            position: relative;
+        }
+
+        #menu-button, #logout-button {
+            position: absolute;
+            top: 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px;
+            cursor: pointer;
+        }
+
+        #menu-button {
+            left: 20px;
+        }
+
+        #logout-button {
+            right: 20px;
+        }
+
+        #user-list-container {
+            display: none;
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            width: 200px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+            overflow: hidden;
+        }
+
+        #user-list-container.open {
+            display: block;
+        }
+
+        #user-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        #user-list li {
+            margin: 0;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #user-list li:last-child {
+            border-bottom: none;
+        }
+
+        #chat-box-container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: auto;
+        }
+
+        #chat-box {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message .sender {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .message .text {
+            padding: 10px;
+            border-radius: 10px;
+            background: #f1f0f0;
+        }
+
+        .message.self .text {
+            background: #007bff;
+            color: white;
+        }
+
+        #message-form {
+            display: flex;
+            padding: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        #message-input {
+            flex: 1;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            margin-right: 10px;
+        }
+
+        #send-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        #attachment-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .message img {
+            max-width: 100%;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <button id="menu-button">Menu</button>
+        <button id="logout-button">Logout</button>
+        <div id="user-list-container">
+            <ul id="user-list"></ul>
+        </div>
+        <div id="chat-box-container">
+            <div id="chat-box"></div>
+            <form id="message-form">
+                <input type="file" id="file-input">
+                <button type="button" id="attachment-button">Attach</button>
+                <input type="text" id="message-input" placeholder="Type a message...">
+                <button type="submit" id="send-button">Send</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        let username = '';
+
+        document.getElementById('logout-button').addEventListener('click', () => {
+    Swal.fire({
+        title: 'Are you sure you want to logout?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, logout',
+        cancelButtonText: 'No, stay logged in'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            if (username) {
+                fetch('/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username })
+                }).then(response => response.json()).then(data => {
+                    if (data.success) {
+                        socket.emit('userDisconnected', username);
+                        promptLoginOrSignup();
+                    } else {
+                        Swal.fire('Error', data.message, 'error');
+                    }
+                });
+            }
+        }
+    });
+});
+
+        document.getElementById('menu-button').addEventListener('click', () => {
+            const userListContainer = document.getElementById('user-list-container');
+            userListContainer.classList.toggle('open');
+            if (userListContainer.classList.contains('open')) {
+                loadUserList();
+            }
+        });
+
+        document.getElementById('attachment-button').addEventListener('click', () => {
+            document.getElementById('file-input').click();
+        });
+
+        document.getElementById('file-input').addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const formData = new FormData();
+                formData.append('image', file);
+                formData.append('sender', username);
+                fetch('/uploadImage', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => response.json()).then(data => {
+                    if (data.success) {
+                        console.log('Image uploaded successfully');
+                    } else {
+                        console.error('Failed to upload image');
+                    }
+                });
+            }
+        });
+
+        const loadChatHistory = () => {
+            fetch('/loadChatHistory')
+                .then(response => response.json())
+                .then(data => {
+                    const chatBox = document.getElementById('chat-box');
+                    chatBox.innerHTML = '';
+                    data.forEach(msg => {
+                        const messageElement = document.createElement('div');
+                        messageElement.classList.add('message');
+                        if (msg.sender === username) {
+                            messageElement.classList.add('self');
+                        }
+                        messageElement.innerHTML = `
+                            <div class="sender">${msg.sender}</div>
+                            ${msg.type === 'text' ? `<div class="text">${msg.message}</div>` : `<img src="${msg.message}" alt="Image">`}
+                        `;
+                        chatBox.appendChild(messageElement);
+                    });
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                });
+        };
+
+        const loadUserList = () => {
+            fetch('/getUserList')
+                .then(response => response.json())
+                .then(data => {
+                    const userList = document.getElementById('user-list');
+                    userList.innerHTML = '';
+                    data.forEach(user => {
+                        const userElement = document.createElement('li');
+                        userElement.textContent = user.username;
+                        if (user.status === 'online') {
+                            userElement.style.color = 'green';
+                        } else {
+                            userElement.style.color = 'red';
+                        }
+                        userList.appendChild(userElement);
+                    });
+                });
+        };
+
+        document.getElementById('message-form').addEventListener('submit', (event) => {
+            event.preventDefault();
+            const messageInput = document.getElementById('message-input');
+            const message = messageInput.value.trim();
+            if (message) {
+                fetch('/sendMessage', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ sender: username, message })
+                }).then(response => response.json()).then(data => {
+                    if (data.success) {
+                        messageInput.value = '';
+                    }
+                });
+            }
+        });
+
+        socket.on('message', (msg) => {
+            const chatBox = document.getElementById('chat-box');
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            if (msg.sender === username) {
+                messageElement.classList.add('self');
+            }
+            messageElement.innerHTML = `
+                <div class="sender">${msg.sender}</div>
+                ${msg.type === 'text' ? `<div class="text">${msg.message}</div>` : `<img src="${msg.message}" alt="Image">`}
+            `;
+            chatBox.appendChild(messageElement);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        const promptLoginOrSignup = () => {
+            Swal.fire({
+                title: 'Login or Signup',
+                html: `
+                    <button id="login-button">Login</button>
+                    <button id="signup-button">Signup</button>
+                `,
+                showConfirmButton: false,
+                allowOutsideClick: false
+            });
+
+            document.getElementById('login-button').addEventListener('click', () => {
+                Swal.close();
+                promptLogin();
+            });
+
+            document.getElementById('signup-button').addEventListener('click', () => {
+                Swal.close();
+                promptSignup();
+            });
+        };
+
+        const promptLogin = () => {
+            Swal.fire({
+                title: 'Login',
+                html: `
+                    <input type="text" id="login-username" class="swal2-input" placeholder="Username">
+                    <input type="password" id="login-password" class="swal2-input" placeholder="Password">
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Login',
+                preConfirm: () => {
+                    const username = Swal.getPopup().querySelector('#login-username').value;
+                    const password = Swal.getPopup().querySelector('#login-password').value;
+                    if (!username || !password) {
+                        Swal.showValidationMessage('Please enter username and password');
+                    }
+                    return { username, password };
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(result.value)
+                    }).then(response => response.json()).then(data => {
+                        if (data.success) {
+                            username = result.value.username;
+                            loadChatHistory();
+                            loadUserList();
+                            socket.emit('userConnected', username);
+                            Swal.close();
+                        } else {
+                            Swal.fire('Error', data.message, 'error');
+                        }
+                    });
+                } else {
+                    promptLoginOrSignup();
+                }
+            });
+        };
+
+        const promptSignup = () => {
+            Swal.fire({
+                title: 'Signup',
+                html: `
+                    <input type="text" id="signup-username" class="swal2-input" placeholder="Username">
+                    <input type="password" id="signup-password" class="swal2-input" placeholder="Password">
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Signup',
+                preConfirm: () => {
+                    const username = Swal.getPopup().querySelector('#signup-username').value;
+                    const password = Swal.getPopup().querySelector('#signup-password').value;
+                    if (!username || !password) {
+                        Swal.showValidationMessage('Please enter username and password');
+                    }
+                    return { username, password };
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    fetch('/signup', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(result.value)
+                    }).then(response => response.json()).then(data => {
+                        if (data.success) {
+                            username = result.value.username;
+                            loadChatHistory();
+                            loadUserList();
+                            socket.emit('userConnected', username);
+                            Swal.close();
+                        } else {
+                            Swal.fire('Error', data.message, 'error');
+                        }
+                    });
+                } else {
+                    promptLoginOrSignup();
+                }
+            });
+        };
+
+        window.addEventListener('beforeunload', () => {
+            if (username) {
+                socket.emit('userDisconnected', username);
+            }
+        });
+
+        promptLoginOrSignup();
+    </script>
+</body>
+</html>
