@@ -12,7 +12,11 @@ app.use(cors());
 // Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads/');
+        const uploadDir = path.join(__dirname, 'public', 'uploads');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         cb(null, Date.now() + path.extname(file.originalname));
@@ -22,8 +26,8 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // File paths
-const usersFilePath = './users/users.json';
-const chatHistoryFilePath = './data/chat_history.json';
+const usersFilePath = path.join(__dirname, 'users', 'users.json');
+const chatHistoryFilePath = path.join(__dirname, 'data', 'chat_history.json');
 
 // Helper functions
 const readJsonFile = (filePath) => {
@@ -126,22 +130,12 @@ app.post('/chatMessage', (req, res) => {
 
     const chatHistory = readJsonFile(chatHistoryFilePath);
     chatHistory.push(chatMessage);
-
-    // Check for AI commands
-    if (message.toLowerCase() === 'help') {
-        const aiMessage = {
-            sender: 'AI',
-            message: 'Available commands: \n1. help - List available commands\n2. ...',
-            type: 'text'
-        };
-        chatHistory.push(aiMessage);
-    }
-
     writeJsonFile(chatHistoryFilePath, chatHistory);
 
-    res.json({ success: true, chatMessage });
+    res.json({ success: true });
 });
 
-app.listen(3000, () => {
-    console.log('Server is running on port 3000');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
