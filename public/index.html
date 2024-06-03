@@ -160,7 +160,7 @@
             cursor: pointer;
         }
 
-        .message img {
+        .message img, .message video {
             max-width: 100%;
             border-radius: 10px;
         }
@@ -176,7 +176,7 @@
         <div id="chat-box-container">
             <div id="chat-box"></div>
             <form id="message-form">
-                <input type="file" id="file-input">
+                <input type="file" id="file-input" accept="image/*,video/*">
                 <button type="button" id="attachment-button">Attach</button>
                 <input type="text" id="message-input" placeholder="Type a message...">
                 <button type="submit" id="send-button">Send</button>
@@ -236,16 +236,16 @@
             const file = event.target.files[0];
             if (file) {
                 const formData = new FormData();
-                formData.append('image', file);
+                formData.append('media', file);
                 formData.append('sender', username);
-                fetch('/uploadImage', {
+                fetch('/uploadMedia', {
                     method: 'POST',
                     body: formData
                 }).then(response => response.json()).then(data => {
                     if (data.success) {
-                        console.log('Image uploaded successfully');
+                        console.log('Media uploaded successfully');
                     } else {
-                        console.error('Failed to upload image');
+                        console.error('Failed to upload media');
                     }
                 });
             }
@@ -265,7 +265,9 @@
                         }
                         messageElement.innerHTML = `
                             <div class="sender">${msg.sender}</div>
-                            ${msg.type === 'text' ? `<div class="text">${msg.message}</div>` : `<img src="${msg.message}" alt="Image">`}
+                            ${msg.type === 'text' ? `<div class="text">${msg.message}</div>` : 
+                            msg.type === 'image' ? `<img src="${msg.message}" alt="Image">` :
+                            `<video controls><source src="${msg.message}" type="video/mp4">Your browser does not support the video tag.</video>`}
                         `;
                         chatBox.appendChild(messageElement);
                     });
@@ -306,10 +308,91 @@
                 }).then(response => response.json()).then(data => {
                     if (data.success) {
                         messageInput.value = '';
+                    } else {
+                        console.error('Failed to send message');
                     }
                 });
             }
         });
+
+        const promptLoginOrSignup = () => {
+            Swal.fire({
+                title: 'Login or Signup',
+                html: `<input type="text" id="swal-username" class="swal2-input" placeholder="Username">
+                       <input type="password" id="swal-password" class="swal2-input" placeholder="Password">`,
+                focusConfirm: false,
+                preConfirm: () => {
+                    const username = document.getElementById('swal-username').value;
+                    const password = document.getElementById('swal-password').value;
+                    return { username, password };
+                },
+                allowOutsideClick: false,
+                showCancelButton: true,
+                confirmButtonText: 'Login',
+                cancelButtonText: 'Signup'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    if (result.value.username && result.value.password) {
+                        username = result.value.username;
+                        fetch('/login', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ username: result.value.username, password: result.value.password })
+                        }).then(response => response.json()).then(data => {
+                            if (data.success) {
+                                document.getElementById('chat-container').style.display = 'flex';
+                                loadChatHistory();
+                                socket.emit('userConnected', username);
+                            } else {
+                                Swal.fire('Error', data.message, 'error').then(() => {
+                                    promptLoginOrSignup();
+                                });
+                            }
+                        });
+                    }
+                } else if (result.dismiss === Swal.DismissReason.cancel) {
+                    Swal.fire({
+                        title: 'Signup',
+                        html: `<input type="text" id="swal-username" class="swal2-input" placeholder="Username">
+                               <input type="password" id="swal-password" class="swal2-input" placeholder="Password">`,
+                        focusConfirm: false,
+                        preConfirm: () => {
+                            const username = document.getElementById('swal-username').value;
+                            const password = document.getElementById('swal-password').value;
+                            return { username, password };
+                        },
+                        allowOutsideClick: false
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            if (result.value.username && result.value.password) {
+                                username = result.value.username;
+                                fetch('/signup', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({ username: result.value.username, password: result.value.password })
+                                }).then(response => response.json()).then(data => {
+                                    if (data.success) {
+                                        document.getElementById('chat-container').style.display = 'flex';
+                                        loadChatHistory();
+                                        socket.emit('userConnected', username);
+                                    } else {
+                                        Swal.fire('Error', data.message, 'error').then(() => {
+                                            promptLoginOrSignup();
+                                        });
+                                    }
+                                });
+                            }
+                        }
+                    });
+                }
+            });
+        };
+
+        promptLoginOrSignup();
 
         socket.on('message', (msg) => {
             const chatBox = document.getElementById('chat-box');
@@ -320,127 +403,13 @@
             }
             messageElement.innerHTML = `
                 <div class="sender">${msg.sender}</div>
-                ${msg.type === 'text' ? `<div class="text">${msg.message}</div>` : `<img src="${msg.message}" alt="Image">`}
+                ${msg.type === 'text' ? `<div class="text">${msg.message}</div>` : 
+                msg.type === 'image' ? `<img src="${msg.message}" alt="Image">` :
+                `<video controls><source src="${msg.message}" type="video/mp4">Your browser does not support the video tag.</video>`}
             `;
             chatBox.appendChild(messageElement);
             chatBox.scrollTop = chatBox.scrollHeight;
         });
-
-        const promptLoginOrSignup = () => {
-            Swal.fire({
-                title: 'Login or Signup',
-                html: `
-                    <button id="login-button" style="margin: 10px; padding: 10px 20px; border-radius: 5px; background-color: #007bff; color: white; border: none;">Login</button>
-                    <button id="signup-button" style="margin: 10px; padding: 10px 20px; border-radius: 5px; background-color: #28a745; color: white; border: none;">Signup</button>
-                `,
-                showConfirmButton: false,
-                allowOutsideClick: false
-            });
-
-            document.getElementById('login-button').addEventListener('click', () => {
-                Swal.close();
-                promptLogin();
-            });
-
-            document.getElementById('signup-button').addEventListener('click', () => {
-                Swal.close();
-                promptSignup();
-            });
-        };
-
-        const promptLogin = () => {
-            Swal.fire({
-                title: 'Login',
-                html: `
-                    <input type="text" id="login-username" class="swal2-input" placeholder="Username">
-                    <input type="password" id="login-password" class="swal2-input" placeholder="Password">
-                `,
-                showCancelButton: true,
-                confirmButtonText: 'Login',
-                preConfirm: () => {
-                    const username = Swal.getPopup().querySelector('#login-username').value;
-                    const password = Swal.getPopup().querySelector('#login-password').value;
-                    if (!username || !password) {
-                        Swal.showValidationMessage('Please enter username and password');
-                    }
-                    return { username, password };
-                }
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    fetch('/login', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(result.value)
-                    }).then(response => response.json()).then(data => {
-                        if (data.success) {
-                            username = result.value.username;
-                            document.getElementById('chat-container').style.display = 'flex';
-                            loadChatHistory();
-                            loadUserList();
-                            socket.emit('userConnected', username);
-                            Swal.close();
-                        } else {
-                            Swal.fire('Error', data.message, 'error');
-                        }
-                    });
-                } else {
-                    promptLoginOrSignup();
-                }
-            });
-        };
-
-        const promptSignup = () => {
-            Swal.fire({
-                title: 'Signup',
-                html: `
-                    <input type="text" id="signup-username" class="swal2-input" placeholder="Username">
-                    <input type="password" id="signup-password" class="swal2-input" placeholder="Password">
-                `,
-                showCancelButton: true,
-                confirmButtonText: 'Signup',
-                preConfirm: () => {
-                    const username = Swal.getPopup().querySelector('#signup-username').value;
-                    const password = Swal.getPopup().querySelector('#signup-password').value;
-                    if (!username || !password) {
-                        Swal.showValidationMessage('Please enter username and password');
-                    }
-                    return { username, password };
-                }
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    fetch('/signup', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify(result.value)
-                    }).then(response => response.json()).then(data => {
-                        if (data.success) {
-                            username = result.value.username;
-                            document.getElementById('chat-container').style.display = 'flex';
-                            loadChatHistory();
-                            loadUserList();
-                            socket.emit('userConnected', username);
-                            Swal.close();
-                        } else {
-                            Swal.fire('Error', data.message, 'error');
-                        }
-                    });
-                } else {
-                    promptLoginOrSignup();
-                }
-            });
-        };
-
-        window.addEventListener('beforeunload', () => {
-            if (username) {
-                socket.emit('userDisconnected', username);
-            }
-        });
-
-        promptLoginOrSignup();
     </script>
 </body>
 </html>
