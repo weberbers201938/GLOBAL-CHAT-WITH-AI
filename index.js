@@ -1,35 +1,15 @@
 const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-const bodyParser = require('body-parser');
+const app = express();
+const fs = require('fs');
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
+const cors = require('cors');
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
-
-const port = process.env.PORT || 3000;
-
-let database = { users: [], messages: [] };
-
-const loadDatabase = () => {
-    if (fs.existsSync('database.json')) {
-        const data = fs.readFileSync('database.json');
-        database = JSON.parse(data);
-    }
-};
-
-const saveDatabase = () => {
-    fs.writeFileSync('database.json', JSON.stringify(database, null, 2));
-};
-
-loadDatabase();
-
-app.use(bodyParser.json());
+app.use(express.json());
 app.use(express.static('public'));
+app.use(cors());
 
+// Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'uploads/');
@@ -38,102 +18,130 @@ const storage = multer.diskStorage({
         cb(null, Date.now() + path.extname(file.originalname));
     }
 });
+
 const upload = multer({ storage: storage });
 
+// File paths
+const usersFilePath = './users/users.json';
+const chatHistoryFilePath = './data/chat_history.json';
+
+// Helper functions
+const readJsonFile = (filePath) => {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+};
+
+const writeJsonFile = (filePath, data) => {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+};
+
+// Ensure files exist
+if (!fs.existsSync(usersFilePath)) {
+    fs.writeFileSync(usersFilePath, JSON.stringify([]));
+}
+
+if (!fs.existsSync(chatHistoryFilePath)) {
+    fs.writeFileSync(chatHistoryFilePath, JSON.stringify([]));
+}
+
+// Routes
 app.post('/signup', (req, res) => {
     const { username, password } = req.body;
-    if (database.users.find(user => user.username === username)) {
-        res.json({ success: false, message: 'Username already taken' });
-    } else {
-        database.users.push({ username, password, status: 'offline' });
-        saveDatabase();
-        res.json({ success: true });
+    const users = readJsonFile(usersFilePath);
+
+    if (users.find(user => user.username === username)) {
+        return res.status(400).json({ success: false, message: 'Username already exists' });
     }
+
+    users.push({ username, password, status: 'offline' });
+    writeJsonFile(usersFilePath, users);
+
+    res.json({ success: true, username });
 });
 
 app.post('/login', (req, res) => {
     const { username, password } = req.body;
-    const user = database.users.find(user => user.username === username && user.password === password);
-    if (user) {
-        // Update user status to 'online'
-        database.users = database.users.map(u => u.username === username ? { ...u, status: 'online' } : u);
-        saveDatabase();
-        // Notify all clients about the updated user list
-        io.emit('userListUpdate', database.users);
-        res.json({ success: true });
-    } else {
-        res.json({ success: false, message: 'Invalid username or password' });
+    const users = readJsonFile(usersFilePath);
+
+    const user = users.find(user => user.username === username && user.password === password);
+
+    if (!user) {
+        return res.status(400).json({ success: false, message: 'Invalid username or password' });
     }
+
+    user.status = 'online';
+    writeJsonFile(usersFilePath, users);
+
+    res.json({ success: true, username });
 });
 
 app.post('/logout', (req, res) => {
     const { username } = req.body;
-    database.users = database.users.map(user => user.username === username ? { ...user, status: 'offline' } : user);
-    saveDatabase();
-    io.emit('userListUpdate', database.users); // Notify all clients about the updated user list
-    res.json({ success: true });
-});
+    const users = readJsonFile(usersFilePath);
 
-app.get('/getUserList', (req, res) => {
-    res.json(database.users);
-});
+    const user = users.find(user => user.username === username);
 
-app.get('/loadChatHistory', (req, res) => {
-    res.json(database.messages);
-});
-
-app.post('/sendMessage', (req, res) => {
-    const { sender, message } = req.body;
-
-    const newMessage = { sender, message, type: 'text' };
-    database.messages.push(newMessage);
-    saveDatabase();
-
-    io.emit('message', newMessage);
-
-    // Check for custom command
-    if (message.toLowerCase().startsWith('help')) {
-        const helpMessage = {
-            sender: 'AI',
-            message: 'Available commands:\n1. help - Show this help message\n2. other commands...',
-            type: 'text'
-        };
-        database.messages.push(helpMessage);
-        saveDatabase();
-        io.emit('message', helpMessage);
+    if (!user) {
+        return res.status(400).json({ success: false, message: 'User not found' });
     }
+
+    user.status = 'offline';
+    writeJsonFile(usersFilePath, users);
 
     res.json({ success: true });
 });
 
 app.post('/uploadMedia', upload.single('media'), (req, res) => {
-    if (req.file) {
-        const fileType = req.file.mimetype.startsWith('image/') ? 'image' : 'video';
-        const newMessage = { sender: req.body.sender, message: '/uploads/' + req.file.filename, type: fileType };
-        database.messages.push(newMessage);
-        saveDatabase();
-        io.emit('message', newMessage);
-        res.json({ success: true });
-    } else {
-        res.json({ success: false, message: 'Failed to upload file' });
+    const { sender } = req.body;
+    const message = {
+        sender,
+        message: `/uploads/${req.file.filename}`,
+        type: req.file.mimetype.startsWith('image') ? 'image' : 'video'
+    };
+
+    const chatHistory = readJsonFile(chatHistoryFilePath);
+    chatHistory.push(message);
+    writeJsonFile(chatHistoryFilePath, chatHistory);
+
+    res.json({ success: true });
+});
+
+app.get('/loadChatHistory', (req, res) => {
+    const chatHistory = readJsonFile(chatHistoryFilePath);
+    res.json(chatHistory);
+});
+
+app.get('/users', (req, res) => {
+    const users = readJsonFile(usersFilePath);
+    res.json(users);
+});
+
+app.post('/chatMessage', (req, res) => {
+    const { sender, message } = req.body;
+
+    const chatMessage = {
+        sender,
+        message,
+        type: 'text'
+    };
+
+    const chatHistory = readJsonFile(chatHistoryFilePath);
+    chatHistory.push(chatMessage);
+
+    // Check for AI commands
+    if (message.toLowerCase() === 'help') {
+        const aiMessage = {
+            sender: 'AI',
+            message: 'Available commands: \n1. help - List available commands\n2. ...',
+            type: 'text'
+        };
+        chatHistory.push(aiMessage);
     }
+
+    writeJsonFile(chatHistoryFilePath, chatHistory);
+
+    res.json({ success: true, chatMessage });
 });
 
-io.on('connection', (socket) => {
-    socket.on('userConnected', (username) => {
-        database.users = database.users.map(user => user.username === username ? { ...user, status: 'online' } : user);
-        saveDatabase();
-        io.emit('userListUpdate', database.users);
-    });
-
-    socket.on('userDisconnected', (username) => {
-        database.users = database.users.map(user => user.username === username ? { ...user, status: 'offline' } : user);
-        saveDatabase();
-        io.emit('userListUpdate', database.users);
-    });
+app.listen(3000, () => {
+    console.log('Server is running on port 3000');
 });
-
-server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-});
-                        
