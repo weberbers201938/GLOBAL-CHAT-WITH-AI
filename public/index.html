@@ -312,39 +312,6 @@ const showSignupForm = () => {
     });
 };
 
-logoutButton.addEventListener('click', () => {
-        Swal.fire({
-            title: 'Are you sure?',
-            text: "Do you want to logout?",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#3085d6',
-            cancelButtonColor: '#d33',
-            confirmButtonText: 'Yes, logout!'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                fetch('/logout', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        currentUser = null;
-                        chatContainer.style.display = 'none';
-                        showAlert('Logged Out!', 'You have been logged out successfully.', 'success').then(() => {
-                            showLoginSignup();
-                        });
-                    } else {
-                        showAlert('Error', 'Failed to logout.', 'error');
-                    }
-                });
-            }
-        });
-    });
-            
     const updateOnlineUsers = () => {
         fetch('/users')
             .then(response => response.json())
@@ -353,11 +320,7 @@ logoutButton.addEventListener('click', () => {
                 users.forEach(user => {
                     const userElement = document.createElement('li');
                     userElement.textContent = user.username;
-                    if (user.status === 'online') {
-                        userElement.style.color = 'green';
-                    } else {
-                        userElement.style.color = 'red';
-                    }
+                    userElement.style.color = user.status === 'online' ? 'green' : 'red';
                     userList.appendChild(userElement);
                 });
             });
@@ -406,22 +369,6 @@ logoutButton.addEventListener('click', () => {
         userListContainer.classList.toggle('open');
     });
 
-    logoutButton.addEventListener('click', () => {
-        fetch('/logout', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ username: currentUser })
-        }).then(response => response.json()).then(data => {
-            if (data.success) {
-                currentUser = null;
-                chatContainer.style.display = 'none';
-                showLoginSignup();
-            }
-        });
-    });
-
     attachmentButton.addEventListener('click', () => {
         fileInput.click();
     });
@@ -440,6 +387,8 @@ logoutButton.addEventListener('click', () => {
         }).then(response => response.json()).then(data => {
             if (data.success) {
                 loadChatHistory();
+            } else {
+                showAlert('Error', 'Failed to upload media.', 'error');
             }
         });
     });
@@ -460,13 +409,14 @@ logoutButton.addEventListener('click', () => {
             if (data.success) {
                 messageInput.value = '';
                 loadChatHistory();
+            } else {
+                showAlert('Error', 'Failed to send message.', 'error');
             }
         });
     });
 
     showLoginSignup();
 });
-
     </script>
 </body>
 </html>
