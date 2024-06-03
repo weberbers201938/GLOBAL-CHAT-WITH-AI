@@ -18,7 +18,7 @@
         }
 
         #chat-container {
-            display: flex;
+            display: none; /* Hide initially */
             flex-direction: column;
             width: 100%;
             max-width: 500px;
@@ -192,33 +192,33 @@
         let username = '';
 
         document.getElementById('logout-button').addEventListener('click', () => {
-    Swal.fire({
-        title: 'Are you sure you want to logout?',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, logout',
-        cancelButtonText: 'No, stay logged in'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            if (username) {
-                fetch('/logout', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ username })
-                }).then(response => response.json()).then(data => {
-                    if (data.success) {
-                        socket.emit('userDisconnected', username);
-                        promptLoginOrSignup();
-                    } else {
-                        Swal.fire('Error', data.message, 'error');
+            Swal.fire({
+                title: 'Are you sure you want to logout?',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, logout',
+                cancelButtonText: 'No, stay logged in'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    if (username) {
+                        fetch('/logout', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ username })
+                        }).then(response => response.json()).then(data => {
+                            if (data.success) {
+                                socket.emit('userDisconnected', username);
+                                promptLoginOrSignup();
+                            } else {
+                                Swal.fire('Error', data.message, 'error');
+                            }
+                        });
                     }
-                });
-            }
-        }
-    });
-});
+                }
+            });
+        });
 
         document.getElementById('menu-button').addEventListener('click', () => {
             const userListContainer = document.getElementById('user-list-container');
@@ -330,8 +330,8 @@
             Swal.fire({
                 title: 'Login or Signup',
                 html: `
-                    <button id="login-button">Login</button>
-                    <button id="signup-button">Signup</button>
+                    <button id="login-button" style="margin: 10px; padding: 10px 20px; border-radius: 5px; background-color: #007bff; color: white; border: none;">Login</button>
+                    <button id="signup-button" style="margin: 10px; padding: 10px 20px; border-radius: 5px; background-color: #28a745; color: white; border: none;">Signup</button>
                 `,
                 showConfirmButton: false,
                 allowOutsideClick: false
@@ -376,6 +376,7 @@
                     }).then(response => response.json()).then(data => {
                         if (data.success) {
                             username = result.value.username;
+                            document.getElementById('chat-container').style.display = 'flex';
                             loadChatHistory();
                             loadUserList();
                             socket.emit('userConnected', username);
@@ -418,6 +419,7 @@
                     }).then(response => response.json()).then(data => {
                         if (data.success) {
                             username = result.value.username;
+                            document.getElementById('chat-container').style.display = 'flex';
                             loadChatHistory();
                             loadUserList();
                             socket.emit('userConnected', username);
