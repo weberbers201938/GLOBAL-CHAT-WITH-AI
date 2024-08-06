@@ -31,7 +31,7 @@
         #chat-container {
             display: none;
             flex-direction: column;
-            width: 100%;
+            width: 90%;
             max-width: 500px;
             background: white;
             border-radius: 20px;
@@ -147,7 +147,7 @@
             display: none;
         }
 
-        #attachment-button {
+        #attachment-button, #record-voice-button {
             background: #007bff;
             color: white;
             border: none;
@@ -157,9 +157,33 @@
             cursor: pointer;
         }
 
-        .message img, .message video {
+        .message img, .message video, .message audio {
             max-width: 100%;
             border-radius: 10px;
+        }
+
+        @media (max-width: 768px) {
+            #chat-container {
+                width: 100%;
+                height: 100vh;
+                border-radius: 0;
+            }
+
+            #message-form {
+                padding: 10px;
+            }
+
+            #message-input {
+                margin-right: 5px;
+            }
+
+            #send-button {
+                padding: 10px 15px;
+            }
+
+            .message .text {
+                max-width: 70%;
+            }
         }
     </style>
 </head>
@@ -175,6 +199,7 @@
             <form id="message-form">
                 <input type="file" id="file-input" accept="image/*,video/*">
                 <button type="button" id="attachment-button">Attach</button>
+                <button type="button" id="record-voice-button">Record</button>
                 <input type="text" id="message-input" placeholder="Type a message...">
                 <button type="submit" id="send-button">Send</button>
             </form>
@@ -183,240 +208,300 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10/dist/sweetalert2.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-    const menuButton = document.getElementById('menu-button');
-    const logoutButton = document.getElementById('logout-button');
-    const chatContainer = document.getElementById('chat-container');
-    const messageForm = document.getElementById('message-form');
-    const messageInput = document.getElementById('message-input');
-    const sendButton = document.getElementById('send-button');
-    const fileInput = document.getElementById('file-input');
-    const attachmentButton = document.getElementById('attachment-button');
-    const chatBox = document.getElementById('chat-box');
-    const userListContainer = document.getElementById('user-list-container');
-    const userList = document.getElementById('user-list');
-    let currentUser = null;
+            const menuButton = document.getElementById('menu-button');
+            const logoutButton = document.getElementById('logout-button');
+            const chatContainer = document.getElementById('chat-container');
+            const messageForm = document.getElementById('message-form');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            const fileInput = document.getElementById('file-input');
+            const attachmentButton = document.getElementById('attachment-button');
+            const recordVoiceButton = document.getElementById('record-voice-button');
+            const chatBox = document.getElementById('chat-box');
+            const userListContainer = document.getElementById('user-list-container');
+            const userList = document.getElementById('user-list');
+            let currentUser = null;
+            let mediaRecorder;
+            let audioChunks = [];
 
-    const showAlert = (title, text, icon) => {
-        return Swal.fire({
-            title,
-            text,
-            icon,
-            showCancelButton: false,
-            confirmButtonText: 'OK'
-        });
-    };
+            const showAlert = (title, text, icon) => {
+                return Swal.fire({
+                    title,
+                    text,
+                    icon,
+                    showCancelButton: false,
+                    confirmButtonText: 'OK'
+                });
+            };
 
-    const showLoginSignup = () => {
-        Swal.fire({
-            title: 'Login or Signup',
-            showCancelButton: true,
-            confirmButtonText: 'Login',
-            cancelButtonText: 'Signup'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                showLoginForm();
-            } else if (result.dismiss === Swal.DismissReason.cancel) {
-                showSignupForm();
-            }
-        });
-    };
-
-    const showLoginForm = () => {
-    Swal.fire({
-        title: 'Login',
-        html: `
-            <input type="text" id="username" class="swal2-input" placeholder="Username">
-            <input type="password" id="password" class="swal2-input" placeholder="Password">
-        `,
-        confirmButtonText: 'Login',
-        showCancelButton: true,
-        preConfirm: () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-
-            if (!username || !password) {
-                showAlert('Error', 'Please enter both username and password.', 'error');
-                return false;
-            }
-
-            return fetch('/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, password })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (!data.success) {
-                        showAlert('Error', data.message, 'error').then(() => {
-                            showLoginSignup();
-                        });
-                    } else {
-                        currentUser = username;
-                        loadChatHistory();
-                        updateOnlineUsers();
-                        chatContainer.style.display = 'flex';
+            const showLoginSignup = () => {
+                Swal.fire({
+                    title: 'Login or Signup',
+                    showCancelButton: true,
+                    confirmButtonText: 'Login',
+                    cancelButtonText: 'Signup'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        showLoginForm();
+                    } else if (result.dismiss === Swal.DismissReason.cancel) {
+                        showSignupForm();
                     }
                 });
-        }
-    }).then((result) => {
-        if (result.dismiss === Swal.DismissReason.cancel) {
-            showLoginSignup();
-        }
-    });
-};
+            };
 
-const showSignupForm = () => {
-    Swal.fire({
-        title: 'Signup',
-        html: `
-            <input type="text" id="username" class="swal2-input" placeholder="Username">
-            <input type="password" id="password" class="swal2-input" placeholder="Password">
-        `,
-        confirmButtonText: 'Signup',
-        showCancelButton: true,
-        preConfirm: () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
+            const showLoginForm = () => {
+                Swal.fire({
+                    title: 'Login',
+                    html: `
+                        <input type="text" id="username" class="swal2-input" placeholder="Username">
+                        <input type="password" id="password" class="swal2-input" placeholder="Password">
+                    `,
+                    confirmButtonText: 'Login',
+                    showCancelButton: true,
+                    preConfirm: () => {
+                        const username = document.getElementById('username').value;
+                        const password = document.getElementById('password').value;
 
-            if (!username || !password) {
-                showAlert('Error', 'Please enter both username and password.', 'error');
-                return false;
-            }
+                        if (!username || !password) {
+                            showAlert('Error', 'Please enter both username and password.', 'error');
+                            return false;
+                        }
 
-            return fetch('/signup', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, password })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (!data.success) {
-                        showAlert('Error', data.message, 'error').then(() => {
-                            showLoginSignup();
-                        });
-                    } else {
-                        showAlert('Success', 'You can now login.', 'success').then(() => {
-                            showLoginSignup();
+                        return fetch('/login', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ username, password })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (!data.success) {
+                                showAlert('Error', data.message, 'error').then(() => {
+                                    showLoginSignup();
+                                });
+                            } else {
+                                currentUser = username;
+                                loadChatHistory();
+                                updateOnlineUsers();
+                                chatContainer.style.display = 'flex';
+                            }
                         });
                     }
+                }).then((result) => {
+                    if (result.dismiss === Swal.DismissReason.cancel) {
+                        showLoginSignup();
+                    }
                 });
-        }
-    }).then((result) => {
-        if (result.dismiss === Swal.DismissReason.cancel) {
-            showLoginSignup();
-        }
-    });
-};
+            };
 
-    const updateOnlineUsers = () => {
-        fetch('/users')
-            .then(response => response.json())
-            .then(users => {
-                userList.innerHTML = '';
-                users.forEach(user => {
-                    const userElement = document.createElement('li');
-                    userElement.textContent = user.username;
-                    userElement.style.color = user.status === 'online' ? 'green' : 'red';
-                    userList.appendChild(userElement);
+            const showSignupForm = () => {
+                Swal.fire({
+                    title: 'Signup',
+                    html: `
+                        <input type="text" id="username" class="swal2-input" placeholder="Username">
+                        <input type="password" id="password" class="swal2-input" placeholder="Password">
+                    `,
+                    confirmButtonText: 'Signup',
+                    showCancelButton: true,
+                    preConfirm: () => {
+                        const username = document.getElementById('username').value;
+                        const password = document.getElementById('password').value;
+
+                        if (!username || !password) {
+                            showAlert('Error', 'Please enter both username and password.', 'error');
+                            return false;
+                        }
+
+                        return fetch('/signup', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ username, password })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (!data.success) {
+                                showAlert('Error', data.message, 'error').then(() => {
+                                    showLoginSignup();
+                                });
+                            } else {
+                                showAlert('Success', 'Signup successful! Please log in.', 'success').then(() => {
+                                    showLoginForm();
+                                });
+                            }
+                        });
+                    }
+                }).then((result) => {
+                    if (result.dismiss === Swal.DismissReason.cancel) {
+                        showLoginSignup();
+                    }
                 });
+            };
+
+            const updateOnlineUsers = () => {
+                fetch('/users')
+                    .then(response => response.json())
+                    .then(data => {
+                        userList.innerHTML = '';
+                        data.users.forEach(user => {
+                            const userElement = document.createElement('li');
+                            userElement.innerHTML = `
+                                <span>${user}</span>
+                                ${user === currentUser ? '<span>(You)</span>' : ''}
+                            `;
+                            userList.appendChild(userElement);
+                        });
+                    });
+            };
+
+            const loadChatHistory = () => {
+                fetch('/messages')
+                    .then(response => response.json())
+                    .then(data => {
+                        chatBox.innerHTML = '';
+                        data.messages.forEach(message => {
+                            const messageElement = document.createElement('div');
+                            messageElement.classList.add('message');
+                            if (message.sender === currentUser) {
+                                messageElement.classList.add('self');
+                            }
+                            messageElement.innerHTML = `
+                                <div class="sender">${message.sender}</div>
+                                <div class="text">${message.text}</div>
+                            `;
+                            if (message.fileType && message.fileUrl) {
+                                if (message.fileType.startsWith('image/')) {
+                                    messageElement.innerHTML += `<img src="${message.fileUrl}" alt="Image">`;
+                                } else if (message.fileType.startsWith('video/')) {
+                                    messageElement.innerHTML += `<video controls><source src="${message.fileUrl}" type="${message.fileType}"></video>`;
+                                } else if (message.fileType.startsWith('audio/')) {
+                                    messageElement.innerHTML += `<audio controls><source src="${message.fileUrl}" type="${message.fileType}"></audio>`;
+                                }
+                            }
+                            chatBox.appendChild(messageElement);
+                        });
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    });
+            };
+
+            menuButton.addEventListener('click', () => {
+                userListContainer.classList.toggle('open');
             });
-    };
 
-    const loadChatHistory = () => {
-        fetch('/loadChatHistory')
-            .then(response => response.json())
-            .then(messages => {
-                chatBox.innerHTML = '';
-                messages.forEach(message => {
+            logoutButton.addEventListener('click', () => {
+                currentUser = null;
+                chatContainer.style.display = 'none';
+                showLoginSignup();
+            });
+
+            messageForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const message = messageInput.value.trim();
+                if (message === '') return;
+
+                fetch('/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ text: message, sender: currentUser })
+                })
+                .then(response => response.json())
+                .then(data => {
                     const messageElement = document.createElement('div');
-                    messageElement.classList.add('message');
-                    if (message.sender === currentUser) {
-                        messageElement.classList.add('self');
-                    }
-
-                    const senderElement = document.createElement('div');
-                    senderElement.classList.add('sender');
-                    senderElement.textContent = message.sender;
-
-                    const textElement = document.createElement('div');
-                    textElement.classList.add('text');
-                    if (message.type === 'text') {
-                        textElement.textContent = message.message;
-                    } else if (message.type === 'image') {
-                        const img = document.createElement('img');
-                        img.src = message.message;
-                        textElement.appendChild(img);
-                    } else if (message.type === 'video') {
-                        const video = document.createElement('video');
-                        video.src = message.message;
-                        video.controls = true;
-                        textElement.appendChild(video);
-                    }
-
-                    messageElement.appendChild(senderElement);
-                    messageElement.appendChild(textElement);
+                    messageElement.classList.add('message', 'self');
+                    messageElement.innerHTML = `
+                        <div class="sender">${currentUser}</div>
+                        <div class="text">${message}</div>
+                    `;
                     chatBox.appendChild(messageElement);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                    messageInput.value = '';
                 });
-                chatBox.scrollTop = chatBox.scrollHeight;
             });
-    };
 
-    menuButton.addEventListener('click', () => {
-        userListContainer.classList.toggle('open');
-    });
+            attachmentButton.addEventListener('click', () => {
+                fileInput.click();
+            });
 
-    attachmentButton.addEventListener('click', () => {
-        fileInput.click();
-    });
+            fileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
 
-    fileInput.addEventListener('change', () => {
-        const file = fileInput.files[0];
-        if (!file) return;
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('sender', currentUser);
 
-        const formData = new FormData();
-        formData.append('media', file);
-        formData.append('sender', currentUser);
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    const messageElement = document.createElement('div');
+                    messageElement.classList.add('message', 'self');
+                    messageElement.innerHTML = `
+                        <div class="sender">${currentUser}</div>
+                        <div class="text">
+                            ${file.type.startsWith('image/') ? `<img src="${data.url}" alt="Image">` : ''}
+                            ${file.type.startsWith('video/') ? `<video controls><source src="${data.url}" type="${file.type}"></video>` : ''}
+                            ${file.type.startsWith('audio/') ? `<audio controls><source src="${data.url}" type="${file.type}"></audio>` : ''}
+                        </div>
+                    `;
+                    chatBox.appendChild(messageElement);
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                });
+            });
 
-        fetch('/uploadMedia', {
-            method: 'POST',
-            body: formData
-        }).then(response => response.json()).then(data => {
-            if (data.success) {
-                loadChatHistory();
-            } else {
-                showAlert('Error', 'Failed to upload media.', 'error');
-            }
+            recordVoiceButton.addEventListener('click', () => {
+                if (mediaRecorder && mediaRecorder.state === "recording") {
+                    mediaRecorder.stop();
+                    recordVoiceButton.textContent = "Record";
+                } else {
+                    navigator.mediaDevices.getUserMedia({ audio: true })
+                        .then(stream => {
+                            mediaRecorder = new MediaRecorder(stream);
+                            mediaRecorder.start();
+                            recordVoiceButton.textContent = "Stop";
+                            audioChunks = [];
+                            mediaRecorder.ondataavailable = event => {
+                                audioChunks.push(event.data);
+                            };
+                            mediaRecorder.onstop = () => {
+                                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                                const formData = new FormData();
+                                formData.append('file', audioBlob);
+                                formData.append('sender', currentUser);
+
+                                fetch('/upload', {
+                                    method: 'POST',
+                                    body: formData
+                                })
+                                .then(response => response.json())
+                                .then(data => {
+                                    const messageElement = document.createElement('div');
+                                    messageElement.classList.add('message', 'self');
+                                    messageElement.innerHTML = `
+                                        <div class="sender">${currentUser}</div>
+                                        <div class="text">
+                                            <audio controls><source src="${data.url}" type="audio/wav"></audio>
+                                        </div>
+                                    `;
+                                    chatBox.appendChild(messageElement);
+                                    chatBox.scrollTop = chatBox.scrollHeight;
+                                });
+                            };
+                        })
+                        .catch(error => {
+                            showAlert('Error', 'Could not access your microphone.', 'error');
+                        });
+                }
+            });
+
+            showLoginSignup();
         });
-    });
-
-    messageForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        const message = messageInput.value;
-        if (!message) return;
-
-        fetch('/chatMessage', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ sender: currentUser, message })
-        }).then(response => response.json()).then(data => {
-            if (data.success) {
-                messageInput.value = '';
-                loadChatHistory();
-            } else {
-                showAlert('Error', 'Failed to send message.', 'error');
-            }
-        });
-    });
-
-    showLoginSignup();
-});
     </script>
 </body>
 </html>
